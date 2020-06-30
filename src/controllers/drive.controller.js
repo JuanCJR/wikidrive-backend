@@ -1,4 +1,3 @@
-const app = require("../app");
 const driveCtrl = {};
 const fs = require("fs");
 const path = require("path");
