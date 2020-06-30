@@ -13,6 +13,8 @@ app.set("port", process.env.PORT || 8082);
 app.use(express.static(path.join(__dirname, "build")));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+
+
 //Middlewares
 app.use(cors());
 
