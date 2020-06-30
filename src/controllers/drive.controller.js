@@ -1,7 +1,7 @@
 const driveCtrl = {};
 const fs = require("fs");
 const path = require("path");
-const homedir = path.join("userdata");
+const homedir = "../../userdata";
 const rimraf = require("rimraf");
 const authorizationModel = require("../models/authorizations");
 //Descarga archivo
