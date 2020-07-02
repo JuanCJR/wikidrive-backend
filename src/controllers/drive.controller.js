@@ -2,8 +2,24 @@ const driveCtrl = {};
 const fs = require("fs");
 const path = require("path");
 const homedir = path.join(require("../../homedir"), "userdata"); //path.join("userdata");
+const recycleBin = path.join(require("../../homedir"), "recycle bin");
 const rimraf = require("rimraf");
 const authorizationModel = require("../models/authorizations");
+const fse = require("fs-extra");
+//Funcion para mover a papelera
+driveCtrl.moveToRecycleBin = async (req, res) => {
+  const { route, objName } = req.body;
+  const source = path.join(homedir, route, objName);
+  const date = new Date();
+  const dltDate =
+    date.getFullYear() + "" + date.getMonth() + "" + date.getDate();
+  const destination = path.join(recycleBin, route, `${dltDate} ${objName}`);
+  await fse.move(source, destination);
+  await authorizationModel.deleteOne({ objPath: route + "/" + objName });
+
+  res.json({ message: "ha sido movido.", code: "obj-mov-true" });
+};
+
 //Descarga archivo
 driveCtrl.downloadFile = async (req, res) => {
   const filename = req.query.filename;
@@ -22,29 +38,44 @@ driveCtrl.downloadFile = async (req, res) => {
 
 //Sube un nuevo archivo
 driveCtrl.uploadFile = async (req, res) => {
-  const { authorizations, route, type, users, groups } = req.body;
+  const { route, type, users, groups, userName } = req.body;
   const file = req.files.newFile;
   const uploadPath = homedir + route + "/" + file.name;
-  await file.mv(uploadPath, async (err) => {
-    if (err) {
-      console.log(err);
-      return res.status(500).send(err);
-    }
-
-    const newAuth = new authorizationModel({
-      objName: file.name,
-      objPath: route + "/" + file.name,
-      objType: "file",
-      authorizations: {
-        type: type,
-        users: JSON.parse(users),
-        groups: JSON.parse(groups),
-      },
+  try {
+    //Valida que el archivo exista
+    await fse.stat(uploadPath);
+    res.json({
+      message: "El archivo que intenta subir ya existe.",
+      code: "file-upload-false",
     });
-    await newAuth.save();
+  } catch (error) {
+    //Sino existe se guarda el archivo
+    await file.mv(uploadPath, async (err) => {
+      if (err) {
+        console.log(err);
+        return res.status(500).send(err);
+      }
 
-    res.send("File uploaded to " + uploadPath);
-  });
+      const newAuth = new authorizationModel({
+        objName: file.name,
+        objPath: route + "/" + file.name,
+        objSize: (file.size / 1048576).toFixed(2),
+        uploadBy: userName,
+        objType: "file",
+        authorizations: {
+          type: type,
+          users: JSON.parse(users),
+          groups: JSON.parse(groups),
+        },
+      });
+      await newAuth.save();
+
+      res.json({
+        message: "Archivo subido con exito",
+        code: "file-upload-true",
+      });
+    });
+  }
 };
 
 //Elimina directorio vacio
@@ -62,6 +93,7 @@ driveCtrl.deleteSimpleDir = async (req, res) => {
 //Elimina archivo
 driveCtrl.deleteFile = async (req, res) => {
   const { route, dirName } = req.body;
+
   try {
     fs.unlinkSync(path.join(homedir, route + "/" + dirName));
     await authorizationModel.deleteOne({ objPath: route + "/" + dirName });
@@ -106,6 +138,7 @@ driveCtrl.createDir = async (req, res) => {
     const newAuth = new authorizationModel({
       objName: objInfo.dirName,
       objPath: objInfo.route + "/" + objInfo.dirName,
+      uploadBy: objInfo.userName,
       objType: "dir",
       authorizations: objInfo.authorizations,
     });
@@ -121,10 +154,11 @@ driveCtrl.createDir = async (req, res) => {
 driveCtrl.getDir = async (req, res) => {
   const { route, userName, userType } = req.body;
   if (userType === "admin") {
+    const auth = await authorizationModel.find();
     let objectsArray = fs.readdirSync(homedir + route);
     let dirArray = [];
     let fileArray = [];
-    let returnedData = [];
+    let compareArray = [];
     objectsArray.map((o) => {
       if (path.extname(o)) {
         fileArray.push({
@@ -140,7 +174,16 @@ driveCtrl.getDir = async (req, res) => {
     });
     dirArray.sort();
     fileArray.sort();
-    returnedData = dirArray.concat(fileArray);
+    compareArray = dirArray.concat(fileArray);
+    let returnedData = [];
+    compareArray.map(async (r) => {
+      let validaObj = auth.filter((a) => a.objPath === route + "/" + r.name);
+      //Valida si encuentra ruta
+      if (validaObj.length) {
+        if (validaObj.length) returnedData = returnedData.concat(validaObj[0]);
+      }
+    });
+
     res.json(returnedData);
   } else {
     const auth = await authorizationModel.find({
@@ -186,8 +229,8 @@ driveCtrl.getDir = async (req, res) => {
     compareArray = dirArray.concat(fileArray);
     let returnedData = [];
     compareArray.map((r) => {
-      if (auth.filter((a) => a.objPath === route + "/" + r.name).length)
-        returnedData = returnedData.concat(r);
+      const validaObj = auth.filter((a) => a.objPath === route + "/" + r.name);
+      if (validaObj.length) returnedData = returnedData.concat(validaObj[0]);
     });
     res.json(returnedData);
   }

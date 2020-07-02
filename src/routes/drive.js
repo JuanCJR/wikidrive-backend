@@ -9,8 +9,11 @@ const {
   deleteRecursiveDir,
   changeName,
   deleteFile,
+  moveToRecycleBin
 } = require("../controllers/drive.controller");
 
+//Mueve a papelera de reciclaje
+router.route("/recyclebin").post(moveToRecycleBin)
 //Ruta para descargar archivo
 router.route("/file/download").get(downloadFile);
 
